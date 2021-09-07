@@ -1,15 +1,5 @@
-# Basic Sample Hardhat Project
+# Battle Loot 
 
-This project demonstrates a basic Hardhat use case. It comes with a sample contract, a test for that contract, a sample script that deploys that contract, and an example of a task implementation, which simply lists the available accounts.
+battle loot is a game basing on loot. Moreover, in order to improve user's experience, the game will be deployed on polygon. But the asset of staking in game is transferred from lay1(Ethereum) to lay2(polygon).
 
-Try running some of the following tasks:
 
-```shell
-npx hardhat accounts
-npx hardhat compile
-npx hardhat clean
-npx hardhat test
-npx hardhat node
-node scripts/sample-script.js
-npx hardhat help
-```
