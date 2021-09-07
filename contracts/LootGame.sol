@@ -1,11 +1,11 @@
 //SPDX-License-Identifier: Unlicense
 pragma solidity ^0.8.0;
 
-import "./ILootProject.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "./ILootProject.sol";
 
-contract LootGame is Ownable {
+contract BattleLoot is Ownable {
     
     LootProject public loot;
 
@@ -123,6 +123,15 @@ contract LootGame is Ownable {
 
     function updateRewardToken(address newRewardToken) external onlyOwner {
         rewardToken = IERC20(newRewardToken);
+
+        emit rewardTokenUpdated(newRewardToken);
+    }
+
+    function refundRewardToken(address receiver) external onlyOwner {
+        uint256 totalAmount = rewardToken.balanceOf(address(this));
+        rewardToken.transfer(receiver, totalAmount);
+
+        emit rewardTokenRefund(receiver, totalAmount);
     }
 
     /** ========== internal view functions ========== */
@@ -189,4 +198,8 @@ contract LootGame is Ownable {
     event pvpBattled(uint256 indexed warriorIndex, address indexed warriorAddress, address acceptorAddress, bool result);
 
     event roleQuit(uint256 indexed tokenId, address playerAddress);
+
+    event rewardTokenUpdated(address indexed newRewardToken);
+
+    event rewardTokenRefund(address indexed receiver, uint256 totalAmount);
 }
