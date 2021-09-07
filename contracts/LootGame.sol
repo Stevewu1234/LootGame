@@ -2,8 +2,10 @@
 pragma solidity ^0.8.0;
 
 import "./ILootProject.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract LootGame {
+contract LootGame is Ownable {
     
     LootProject public loot;
 
@@ -16,19 +18,20 @@ contract LootGame {
     uint256 public totalWarriors;
 
     struct Battle {
-        address acceptor,
-        uint256 challengerPower,
-        uint256 acceptorPower,
-        uint256 happenedTime,
+        address acceptorAddress;
+        uint256 challengerPower;
+        uint256 acceptorPower;
+        uint256 happenedTime;
         bool result;
     }
 
     struct Warriors {
-        address warriorAddress,
-        address originalNFT,
-        uint256 originalTokenId,
-        uint256 initialPower
+        address warriorAddress;
+        address originalNFT;
+        uint256 originalTokenId;
+        uint256 initialPower;
     }
+
 
     mapping ( address => Battle ) public battleDetails;
 
@@ -48,48 +51,49 @@ contract LootGame {
     /** ========== external mutative functions ========== */
 
     function pvpBattle() external {
-        address warriorAddress = _msgSender();
-        require(currentIndex[warriorAddress] != 0, "pvpBattle: please register your role at first");
+        address challengerAddress = _msgSender();
+        require(currentIndex[challengerAddress] != 0, "pvpBattle: please register your role at first");
         
         // get warriors message
-        uint256 warriorIndex = currentIndex[warriorAddress];
-        Warriors memory warrior = candidateWarriors[warriorIndex];
+        uint256 warriorIndex = currentIndex[challengerAddress];
+        Warriors memory challenger = candidateWarriors[warriorIndex];
 
         // select a random candidate warriors by challenger's basic power.
-        uint256 rand = uint256(abi.encodePacked(toString(warrior.initialPower)));
+        uint256 rand = uint256(keccak256(abi.encodePacked(toString(challenger.initialPower))));
         uint256 randomWarriorNumber = rand % totalWarriors;
         Warriors memory acceptor = candidateWarriors[randomWarriorNumber];
 
         // pvp battle
-        uint256 warriorPower = _calculateRandomScore(warrior.originalTokenId, warrior.initialPower);
+        uint256 warriorPower = _calculateRandomScore(challenger.originalTokenId, challenger.initialPower);
         uint256 acceptorPower = _calculateRandomScore(acceptor.originalTokenId, acceptor.initialPower);
 
-        battleDetails[warriorAddress].acceptor = acceptor;
-        battleDetails[warriorAddress].challengerPower = warriorPower;
-        battleDetails[warriorAddress].acceptorPower = acceptorPower;
-        battleDetails[warriorAddress].happenedTime = block.timestamp;
+        battleDetails[challengerAddress].acceptorAddress = acceptor.warriorAddress;
+        battleDetails[challengerAddress].challengerPower = warriorPower;
+        battleDetails[challengerAddress].acceptorPower = acceptorPower;
+        battleDetails[challengerAddress].happenedTime = block.timestamp;
 
         if(warriorPower > acceptorPower) {
-            battleDetails[warriorAddress].result = true;
+            battleDetails[challengerAddress].result = true;
             
-            rewardToken.transfer(warriorAddress, rewardAmountPerRound);
+            rewardToken.transfer(challengerAddress, rewardAmountPerRound);
         } else {
-            battleDetails[warriorAddress].result = false;
+            battleDetails[challengerAddress].result = false;
         }
         
-        emit pvpBattled(warriorIndex, warriorAddress, acceptor.acceptorAddress, battleDetails[warriorAddress].result);
+        emit pvpBattled(warriorIndex, challengerAddress, acceptor.warriorAddress, battleDetails[challengerAddress].result);
     }
 
 
     function registerRole(uint256 tokenId, uint256 rarityscore) external {
 
         // transfer your fight token
-        require(loot.transferFrom(_msgSender(), address(this), tokenId), "createRole: fail to create loot role");
+        require(loot.ownerOf(tokenId) == _msgSender(), "createRole: you do not own the nft");
+        loot.transferFrom(_msgSender(), address(this), tokenId);
 
         uint256 nextWarrors = totalWarriors + 1;
 
         candidateWarriors[nextWarrors].originalNFT = address(loot);
-        candidateWarriors[nextWarrors].originalTokenId = tokenid;
+        candidateWarriors[nextWarrors].originalTokenId = tokenId;
         candidateWarriors[nextWarrors].initialPower = rarityscore;
         candidateWarriors[nextWarrors].warriorAddress = _msgSender();
         currentIndex[_msgSender()] = nextWarrors;
@@ -109,24 +113,30 @@ contract LootGame {
         totalWarriors--; 
 
         // return player's token
-        loot.transfer(_msgSender(), tokenId);
+        loot.transferFrom(address(0), _msgSender(), tokenId);
 
         emit roleQuit(tokenId, _msgSender());
     }
 
 
+    /** ========== exteranl mutative onlyOwner functions ========== */
+
+    function updateRewardToken(address newRewardToken) external onlyOwner {
+        rewardToken = IERC20(newRewardToken);
+    }
+
     /** ========== internal view functions ========== */
 
     // calculate random score basing on user's rarityscore of the nft
-    function _calculateRandomScore(uint256 _rarityScore, uint256 tokenId) internal view returns (uint256) {
-        uint256 rand = uint256(abi.encodepacked(toString(tokenId), toString(_rarityScore), toString(block.timestamp)));
+    function _calculateRandomScore(uint256 _rarityScore, uint256 tokenId) internal view returns (uint256 randomScore) {
+        uint256 rand = uint256(keccak256(abi.encodePacked(toString(tokenId), toString(_rarityScore), toString(block.timestamp))));
         (uint256 minScore, uint256 maxScore) = _getScoreRange(_rarityScore);
         uint256 levelRange = maxScore - minScore;
         
         return randomScore = (rand % levelRange) + minScore;
     }
 
-    function _getScoreRange(uint256 _rarityScore) internal view returns (uint256 minScore, uint256 maxScore) {
+    function _getScoreRange(uint256 _rarityScore) internal pure returns (uint256 minScore, uint256 maxScore) {
         require(_rarityScore != 0, "rarity score of loot must not be null");
         
         if(_rarityScore > 0 && _rarityScore <= 1000) {
@@ -142,9 +152,9 @@ contract LootGame {
         }
     }
 
-    function _calculateRange(uint256 _rarityScore, uint256 ratio) internal view returns (uint256, uint256) {
-        minScore = _rarityScore - _rarityScore * ratio / 100;
-        maxScore = _rarityScore + _rarityScore * ratio / 100;
+    function _calculateRange(uint256 _rarityScore, uint256 ratio) internal pure returns (uint256, uint256) {
+        uint256 minScore = _rarityScore - _rarityScore * ratio / 100;
+        uint256 maxScore = _rarityScore + _rarityScore * ratio / 100;
         return (minScore, maxScore);
     }
 
