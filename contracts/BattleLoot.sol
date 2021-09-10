@@ -7,7 +7,7 @@ import "./ILootProject.sol";
 
 contract BattleLoot is Ownable {
     
-    LootProject public loot;
+    mLootProject public mloot;
 
     IERC20 public rewardToken;
 
@@ -17,7 +17,14 @@ contract BattleLoot is Ownable {
 
     uint256 public totalWarriors;
 
-    struct Battle {
+    struct BattleByRanking {
+        address acceptorAddress;
+        uint256 happenedTime;
+        bool result;
+        uint256 fightNumber;
+    }
+
+    struct BattleByRarityIndex {
         address acceptorAddress;
         uint256 challengerPower;
         uint256 acceptorPower;
@@ -27,13 +34,14 @@ contract BattleLoot is Ownable {
 
     struct Warriors {
         address warriorAddress;
-        address originalNFT;
         uint256 originalTokenId;
-        uint256 initialPower;
+        uint256 rarityRanking;
+        uint256 rarityIndex;
     }
 
+    mapping ( address => BattleByRanking ) public battleDetailsByRanking;
 
-    mapping ( address => Battle ) public battleDetails;
+    mapping ( address => BattleByRarityIndex ) public battleDetailsByRarityIndex;
 
     // record candidate warriors
     mapping ( uint256 => Warriors ) public candidateWarriors;
@@ -50,7 +58,7 @@ contract BattleLoot is Ownable {
 
     /** ========== external mutative functions ========== */
 
-    function pvpBattle() external {
+    function pvpBattleByRanking() external {
         address challengerAddress = _msgSender();
         require(currentIndex[challengerAddress] != 0, "pvpBattle: please register your role at first");
         
@@ -59,43 +67,94 @@ contract BattleLoot is Ownable {
         Warriors memory challenger = candidateWarriors[warriorIndex];
 
         // select a random candidate warriors by challenger's basic power.
-        uint256 rand = uint256(keccak256(abi.encodePacked(toString(challenger.initialPower), toString(block.timestamp))));
+        uint256 rand = uint256(keccak256(abi.encodePacked(toString(challenger.rartiyRanking), toString(block.timestamp))));
         uint256 randomWarriorNumber = rand % totalWarriors;
         Warriors memory acceptor = candidateWarriors[randomWarriorNumber];
 
         // pvp battle
-        uint256 warriorPower = _calculateRandomScore(challenger.originalTokenId, challenger.initialPower);
-        uint256 acceptorPower = _calculateRandomScore(acceptor.originalTokenId, acceptor.initialPower);
+        uint256 warriorRanking = challenger.rartiyRanking;
+        uint256 acceptorRanking = acceptor.rartiyRanking;
 
-        battleDetails[challengerAddress].acceptorAddress = acceptor.warriorAddress;
-        battleDetails[challengerAddress].challengerPower = warriorPower;
-        battleDetails[challengerAddress].acceptorPower = acceptorPower;
-        battleDetails[challengerAddress].happenedTime = block.timestamp;
+        battleDetailsByRanking[challengerAddress].acceptorAddress = acceptor.warriorAddress;
+        battleDetailsByRanking[challengerAddress].happenedTime = block.timestamp;
 
-        if(warriorPower > acceptorPower) {
-            battleDetails[challengerAddress].result = true;
+        if(warriorRanking < acceptorRanking) {
+            battleDetailsByRanking[challengerAddress].result = true;
             
             rewardToken.transfer(challengerAddress, rewardAmountPerRound);
         } else {
-            battleDetails[challengerAddress].result = false;
+            
+            battleDetailsByRanking[challengerAddress].result = false;
+            battleDetailsByRanking[challengerAddress].fightNumber++;
+
+            if(battleDetailsByRanking[challengerAddress].fightNumber == 5) {
+                rewardToken.transfer(challengerAddress, rewardAmountPerRound);
+                battleDetailsByRanking[challengerAddress].fightNumber = 0;
+            }
         }
         
-        emit pvpBattled(warriorIndex, challengerAddress, acceptor.warriorAddress, battleDetails[challengerAddress].result);
+        emit pvpBattledByRanking(warriorIndex, challengerAddress, acceptor.warriorAddress, battleDetailsByRanking[challengerAddress].result);
     }
 
 
-    function registerRole(uint256 tokenId, uint256 rarityscore) external {
+    function pvpBattleByRarityIndex() external {
+        address challengerAddress = _msgSender();
+        require(currentIndex[challengerAddress] != 0, "pvpBattle: please register your role at first");
+
+
+        // get warriors message
+        uint256 warriorIndex = currentIndex[challengerAddress];
+        Warriors memory challenger = candidateWarriors[warriorIndex];
+
+        // select a random candidate warriors by challenger's basic power.
+        uint256 rand = uint256(keccak256(abi.encodePacked(toString(challenger.rartiyRanking), toString(challenger.rarityIndex), toString(block.timestamp))));
+        uint256 randomWarriorNumber = rand % totalWarriors;
+        Warriors memory acceptor = candidateWarriors[randomWarriorNumber];
+
+        // pvp battle
+        uint256 warriorPower = _calculateRandomScore(challenger.originalTokenId, challenger.rarityIndex);
+        uint256 acceptorPower = _calculateRandomScore(acceptor.originalTokenId, acceptor.rarityIndex);
+
+        battleDetailsByRarityIndex[challengerAddress].acceptorAddress = acceptor.warriorAddress;
+        battleDetailsByRarityIndex[challengerAddress].happenedTime = block.timestamp;
+
+        if(warriorPower > acceptorPower) {
+            battleDetailsByRarityIndex[challengerAddress].result = true;
+            
+            rewardToken.transfer(challengerAddress, rewardAmountPerRound);
+        } else {
+            
+            battleDetailsByRarityIndex[challengerAddress].result = false;
+            battleDetailsByRarityIndex[challengerAddress].fightNumber++;
+
+            if(battleDetailsByRarityIndex[challengerAddress].fightNumber == 5) {
+                rewardToken.transfer(challengerAddress, rewardAmountPerRound);
+                battleDetailsByRarityIndex[challengerAddress].fightNumber = 0;
+            }
+        }
+        
+        emit pvpBattledByRarityIndex(warriorIndex, challengerAddress, acceptor.warriorAddress, battleDetailsByRarityIndex[challengerAddress].result);
+
+    }
+
+
+    function registerRole(
+        uint256 tokenId, 
+        uint256 _rartiyRanking, 
+        uint256 _rarityIndex
+        ) external {
 
         // transfer your fight token
-        require(loot.ownerOf(tokenId) == _msgSender(), "createRole: you do not own the nft");
-        loot.transferFrom(_msgSender(), address(this), tokenId);
+        require(mloot.ownerOf(tokenId) == _msgSender(), "createRole: you do not own the nft");
+        mloot.transferFrom(_msgSender(), address(this), tokenId);
 
         uint256 nextWarrors = totalWarriors + 1;
 
-        candidateWarriors[nextWarrors].originalNFT = address(loot);
         candidateWarriors[nextWarrors].originalTokenId = tokenId;
-        candidateWarriors[nextWarrors].initialPower = rarityscore;
+        candidateWarriors[nextWarrors].rartiyRanking = _rartiyRanking;
         candidateWarriors[nextWarrors].warriorAddress = _msgSender();
+        candidateWarriors[nextWarrors].rarityIndex = _rarityIndex * 10000;
+
         currentIndex[_msgSender()] = nextWarrors;
 
         totalWarriors++;
@@ -113,7 +172,7 @@ contract BattleLoot is Ownable {
         totalWarriors--; 
 
         // return player's token
-        loot.transferFrom(address(0), _msgSender(), tokenId);
+        mloot.transferFrom(address(0), _msgSender(), tokenId);
 
         emit roleQuit(tokenId, _msgSender());
     }
@@ -195,7 +254,9 @@ contract BattleLoot is Ownable {
 
     event roleRegistered(address indexed role, uint256 indexed tokenId, uint256 power);
 
-    event pvpBattled(uint256 indexed warriorIndex, address indexed warriorAddress, address acceptorAddress, bool result);
+    event pvpBattledByRanking(uint256 indexed warriorIndex, address indexed warriorAddress, address acceptorAddress, bool result);
+
+    event pvpBattledByRarityIndex(uint256 indexed warriorIndex, address indexed warriorAddress, address acceptorAddress, bool result);
 
     event roleQuit(uint256 indexed tokenId, address playerAddress);
 
