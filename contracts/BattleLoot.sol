@@ -238,6 +238,10 @@ contract BattleLoot is Ownable {
         emit rewardTokenRefund(receiver, totalAmount);
     }
 
+    function updateMMLoot(address newMMLoot) external onlyOwner {
+        mmloot = LootProject(newMMLoot);
+    }
+
     /** ========== internal view functions ========== */
 
     // calculate random score basing on user's rarityscore of the nft
