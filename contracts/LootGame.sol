@@ -64,8 +64,8 @@ contract BattleLoot is Ownable {
         Warriors memory acceptor = candidateWarriors[randomWarriorNumber];
 
         // pvp battle
-        uint256 warriorPower = _calculateRandomScore(challenger.originalTokenId, challenger.initialPower);
-        uint256 acceptorPower = _calculateRandomScore(acceptor.originalTokenId, acceptor.initialPower);
+        uint256 warriorPower = _calculateRandomScore(challenger.initialPower, challenger.originalTokenId) ;
+        uint256 acceptorPower = _calculateRandomScore(acceptor.initialPower, acceptor.originalTokenId);
 
         battleDetails[challengerAddress].acceptorAddress = acceptor.warriorAddress;
         battleDetails[challengerAddress].challengerPower = warriorPower;
