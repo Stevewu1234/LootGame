@@ -65,7 +65,11 @@ contract BattleLoot is Ownable {
 
     function getPlayerStakedToken() public view returns (uint256[] memory) {
         return candidateWarriors[warriorsIndex[_msgSender()]].originalTokenIds;
-    } 
+    }
+
+    function getClaimableReward(address account) public view returns (uint256 rewardAmount) {
+        return claimableReward[account];
+    }
 
 
     /** ========== external mutative functions ========== */
