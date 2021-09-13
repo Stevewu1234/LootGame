@@ -6,5 +6,5 @@ battle loot is a game basing on loot. Moreover, in order to improve user's exper
 0x811df8bfF394FA84cc88b950Eca615165D33712E
 
 
-0x811df8bfF394FA84cc88b950Eca615165D33712E
+0x5AC25F10dc42F64041d16Cc989F3eb640F449cD7
 
