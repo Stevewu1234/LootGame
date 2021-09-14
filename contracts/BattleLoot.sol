@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "./ILootProject.sol";
+import "hardhat/console.sol";
 
 contract BattleLoot is Ownable {
     
@@ -45,39 +46,57 @@ contract BattleLoot is Ownable {
     mapping ( address => BattleByRarityIndex ) public battleDetailsByRarityIndex;
 
     // record candidate warriors.
-    mapping ( uint256 => Warriors ) internal candidateWarriors;
+    mapping ( uint256 => Warriors ) private candidateWarriors;
 
     // the number among warriors.
-    mapping ( address => uint256 ) public warriorsIndex;
+    mapping ( address => uint256 ) private warriorsIndex;
 
     // record account's claimable reward.
     mapping ( address => uint256 ) private claimableReward;
 
     constructor (
         address _mmlootaddress, 
-        address rewardTokenAddress
+        address rewardTokenAddress,
+        uint256 _rewardAmountPerRound
         ) {
         mmloot = LootProject(_mmlootaddress);
         rewardToken = IERC20(rewardTokenAddress);
+        rewardAmountPerRound = _rewardAmountPerRound;
     }
 
     /** ========== public view functions ========== */
 
-    function getPlayerStakedToken() public view returns (uint256[] memory) {
-        return candidateWarriors[warriorsIndex[_msgSender()]].originalTokenIds;
+    function getYourStakedToken() public view returns (string memory _stakedTokenId) {
+        uint256[] memory tokenIds = candidateWarriors[warriorsIndex[_msgSender()]].originalTokenIds;
+        for(uint256 i = 0; i < tokenIds.length; i++ ) {
+            if(tokenIds[i] != 0) {
+                _stakedTokenId = string(abi.encodePacked(_stakedTokenId, tokenIds[i]));
+            }
+        }
+    }
+
+    function getYourStakedToken(address account) public view returns (string memory _stakedTokenId) {
+        uint256[] memory tokenIds = candidateWarriors[warriorsIndex[account]].originalTokenIds;
+        for(uint256 i = 0; i < tokenIds.length; i++ ) {
+            if(tokenIds[i] != 0) {
+                _stakedTokenId = string(abi.encodePacked(_stakedTokenId, tokenIds[i]));
+            }
+        }
     }
 
     function getClaimableReward(address account) public view returns (uint256 rewardAmount) {
         return claimableReward[account];
     }
 
-    function getCandidateWarriors(uint256 warriorIndex) public view returns (
+    function getCandidateWarriors(address warriorAddress) public view returns (
+        uint256 warriorId,
         address _warriorAddress,
-        uint256[] _originalTokenIds,
-        uint256[] _rarityRankings,
-        uint256[] _rarityIndexes
+        uint256[] memory _originalTokenIds,
+        uint256[] memory _rarityRankings,
+        uint256[] memory _rarityIndexes
     ) {
-        Warriors memory warrior = candidateWarriors[warriorIndex];
+        Warriors memory warrior = candidateWarriors[warriorsIndex[warriorAddress]];
+        warriorId = warriorsIndex[warriorAddress];
         _warriorAddress = warrior.warriorAddress;
         _originalTokenIds = warrior.originalTokenIds;
         _rarityRankings = warrior.rarityRankings;
@@ -87,96 +106,46 @@ contract BattleLoot is Ownable {
 
     /** ========== external mutative functions ========== */
 
-    function pvpBattleByRanking(uint256 tokenId) external {
+    function pvpBattleByRanking(uint256 tokenId) external returns (bool result) {
         address challengerAddress = _msgSender();
         require(warriorsIndex[challengerAddress] != 0, "pvpBattleByRanking: please register your role at first");
-        require(_checkTokenExisted(tokenId), "pvpBattleByRanking: please register tokenId first");
+        require(_checkTokenExisted(challengerAddress, tokenId), "pvpBattleByRanking: please register tokenId first");
         
-        // get warriors message 
-        uint256 warriorIndex = warriorsIndex[challengerAddress];
-        Warriors memory challenger = candidateWarriors[warriorIndex];
+        // get challenger message 
+        ( , , uint256[] memory tokenIds, uint256[] memory rankings, ) = getCandidateWarriors(challengerAddress);
+        uint256 challengerRanking = _getRarityMessage(tokenId, tokenIds, rankings);
+        console.log("finish get challenger message");
 
-        // select a random candidate warriors by challenger's basic power.
-        uint256 rand = uint256(keccak256(abi.encodePacked(toString(tokenId), toString(block.timestamp))));
-        uint256 randomWarriorNumber = rand % totalWarriors;
-        Warriors memory acceptor = candidateWarriors[randomWarriorNumber];
-
-        // select random tokenId from accpetor.
-        uint256 randomWarriorTokenId = acceptor.originalTokenIds[(rand % acceptor.originalTokenIds.length) - 1];
+        // select a random candidate warriors by challenger's basic message.
+        (address acceptorAddress, , uint256 acceptorRanking, ) = _getRandomAcceptor(tokenId);
+        console.log("finish get select random user");
         
         // pvp battle
-        (uint256 _warriorRanking, ) = _getRarityMessageByTokenId(challenger.warriorAddress ,tokenId);
-        (uint256 _acceptorRanking, ) = _getRarityMessageByTokenId(acceptor.warriorAddress ,randomWarriorTokenId);
-
-        battleDetailsByRanking[challengerAddress].acceptorAddress = acceptor.warriorAddress;
-        battleDetailsByRanking[challengerAddress].challengerRanking = _warriorRanking;
-        battleDetailsByRanking[challengerAddress].acceptorRanking = _acceptorRanking;
-
-        if(_warriorRanking < _acceptorRanking) {
-            battleDetailsByRanking[challengerAddress].result = true;
-            
-            _recordRewardAmount(challengerAddress);
-        } else {
-            
-            battleDetailsByRanking[challengerAddress].result = false;
-            battleDetailsByRanking[challengerAddress].failNumber++;
-
-            if(battleDetailsByRanking[challengerAddress].failNumber == 5) {
-                _recordRewardAmount(challengerAddress);
-                battleDetailsByRanking[challengerAddress].failNumber = 0;
-            }
-        }
+        return result = _battleByRanking(challengerAddress, acceptorAddress, challengerRanking, acceptorRanking);
+        console.log("finish battle");
         
-        emit pvpBattledByRanking(challengerAddress, acceptor.warriorAddress, battleDetailsByRanking[challengerAddress].result);
+        emit pvpBattledByRanking(challengerAddress, acceptorAddress, result);
     }
 
 
-    function pvpBattleByRarityIndex(uint256 tokenId) external {
+    function pvpBattleByRarityIndex(uint256 tokenId) external returns (bool result) {
         address challengerAddress = _msgSender();
         require(warriorsIndex[challengerAddress] != 0, "pvpBattleByRarityIndex: please register your role at first");
-        require(_checkTokenExisted(tokenId), "pvpBattleByRarityIndex: please register tokenId first");
-
+        require(_checkTokenExisted(challengerAddress, tokenId), "pvpBattleByRarityIndex: please register tokenId first");
 
         // get warriors message
-        uint256 warriorIndex = warriorsIndex[challengerAddress];
-        Warriors memory challenger = candidateWarriors[warriorIndex];
+        (, , uint256[] memory tokenIds, , uint256[] memory indexes) = getCandidateWarriors(challengerAddress);
+        uint256 challengerRarityIndex = _getRarityMessage(tokenId, tokenIds, indexes);
 
-        // select a random candidate warriors by challenger's basic power.
-        uint256 rand = uint256(keccak256(abi.encodePacked(toString(tokenId), toString(block.timestamp))));
-        uint256 randomWarriorNumber = rand % totalWarriors;
-        Warriors memory acceptor = candidateWarriors[randomWarriorNumber];
-
-        // select random tokenId from accpetor.
-        uint256 randomWarriorTokenId = acceptor.originalTokenIds[(rand % acceptor.originalTokenIds.length) - 1];
+        // select a random candidate acceptor address by challenger's basic power.
+        (address acceptorAddress, uint256 randomAcceptorTokenId, , uint256 acceptorRarityIndex) = _getRandomAcceptor(tokenId);
 
         // pvp battle
-        (, uint256 warriorRarityindex) = _getRarityMessageByTokenId(challenger.warriorAddress, tokenId);
-        (,uint256 acceptorRarityindex) = _getRarityMessageByTokenId(acceptor.warriorAddress, randomWarriorTokenId);
+        uint256 challengerPower = _calculateRandomScore(challengerRarityIndex, tokenId);
+        uint256 acceptorPower = _calculateRandomScore(acceptorRarityIndex, randomAcceptorTokenId);
+        return result = _battleByIndex(challengerAddress, acceptorAddress, challengerPower, acceptorPower);
 
-        uint256 warriorPower = _calculateRandomScore(warriorRarityindex, tokenId);
-        uint256 acceptorPower = _calculateRandomScore(acceptorRarityindex, randomWarriorTokenId);
-
-        battleDetailsByRarityIndex[challengerAddress].acceptorAddress = acceptor.warriorAddress;
-        battleDetailsByRarityIndex[challengerAddress].challengerPower = warriorPower;
-        battleDetailsByRarityIndex[challengerAddress].acceptorPower = acceptorPower;
-
-        if(warriorPower > acceptorPower) {
-            battleDetailsByRarityIndex[challengerAddress].result = true;
-            
-            _recordRewardAmount(challengerAddress);
-        } else {
-            
-            battleDetailsByRarityIndex[challengerAddress].result = false;
-            battleDetailsByRarityIndex[challengerAddress].failNumber++;
-
-            if(battleDetailsByRarityIndex[challengerAddress].failNumber == 5) {
-                _recordRewardAmount(challengerAddress);
-                battleDetailsByRarityIndex[challengerAddress].failNumber = 0;
-            }
-        }
-        
-        emit pvpBattledByRarityIndex(challengerAddress, acceptor.warriorAddress, battleDetailsByRarityIndex[challengerAddress].result);
-
+        emit pvpBattledByRarityIndex(challengerAddress, acceptorAddress, result);
     }
 
 
@@ -209,7 +178,7 @@ contract BattleLoot is Ownable {
     function quitFromGame(uint256 tokenId) external {        
 
         // delete player tokenId
-        require(_checkTokenExisted(tokenId), "quitFromGame: Sorry, you are not a candidate warrior.");
+        require(_checkTokenExisted(_msgSender(), tokenId), "quitFromGame: Sorry, you are not a candidate warrior.");
         require(_deleteTokenIdRecords(tokenId), "quitFromGame: fail to delete tokenId records");
 
         // check player records and delete player records if no tokenId exists.
@@ -244,7 +213,7 @@ contract BattleLoot is Ownable {
         emit rewardTokenUpdated(newRewardToken);
     }
 
-    function refundRewardToken(address receiver) external onlyOwner {
+    function removeRewardToken(address receiver) external onlyOwner {
         uint256 totalAmount = rewardToken.balanceOf(address(this));
         rewardToken.transfer(receiver, totalAmount);
 
@@ -254,6 +223,9 @@ contract BattleLoot is Ownable {
     function updateMMLoot(address newMMLoot) external onlyOwner {
         mmloot = LootProject(newMMLoot);
     }
+
+
+
 
     /** ========== internal view functions ========== */
 
@@ -288,8 +260,12 @@ contract BattleLoot is Ownable {
         return (minScore, maxScore);
     }
 
-    function _checkTokenExisted(uint256 tokenId) internal view returns (bool existed) {
-        uint256[] memory tokenIds = candidateWarriors[warriorsIndex[_msgSender()]].originalTokenIds;
+
+
+
+
+    function _checkTokenExisted(address account, uint256 tokenId) internal view returns (bool existed) {
+        uint256[] memory tokenIds = candidateWarriors[warriorsIndex[account]].originalTokenIds;
         for(uint256 i = 0; i < tokenIds.length; i++ ){
             if(tokenId == tokenIds[i]) {
                 existed = true;
@@ -297,20 +273,50 @@ contract BattleLoot is Ownable {
         }
     }
 
-    function _getRarityMessageByTokenId(address account, uint256 tokenId) internal view returns (uint256 ranking, uint256 index) {
-        uint256[] memory tokenIds = candidateWarriors[warriorsIndex[account]].originalTokenIds;
-        uint256[] memory rankings = candidateWarriors[warriorsIndex[account]].rarityRankings;
-        uint256[] memory rarityindexes = candidateWarriors[warriorsIndex[account]].rarityIndexes;
+    function _getRarityMessage(uint256 tokenId, uint256[] memory _tokenIds, uint256[] memory _array) internal pure returns (uint256 targetData) {
+        require(_tokenIds.length == _array.length, "not match");
 
-        require(tokenIds.length == rankings.length && rankings.length == rarityindexes.length, "not match");
-
-        for(uint256 i = 0; i < tokenIds.length; i++ ) {
-            if(tokenId == tokenIds[i]) {
-                ranking = rankings[i];
-                index = rarityindexes[i];
+        for(uint256 i = 0; i < _tokenIds.length; i++ ) {
+            if(tokenId == _tokenIds[i]) {
+                return targetData = _array[i];
             }
         }
     }
+
+    function _getRandomAcceptor(uint256 challengerTokenId) internal pure returns (
+        address acceptorAddress, 
+        uint256 randomAcceptorTokenId,
+        uint256 acceptorRanking,
+        uint256 acceptorRarityIndex
+    ) {
+        // select a random candidate acceptor address by challenger's basic power.
+        uint256 rand = uint256(keccak256(abi.encodePacked(toString(challengerTokenId), toString(block.timestamp))));
+        uint256 randomWarriorNumber = rand % totalWarriors;
+        acceptorAddress = candidateWarriors[randomWarriorNumber].warriorAddress;
+        (, , uint256[] memory atokenIds, uint256[] memory aRankings, uint256[] memory aIndexes) = getCandidateWarriors(acceptorAddress);
+
+        // deleted tokenId will still occupy array position, generate new nonzero tokenId array to storage available tokenIds.
+        uint256[] memory newArray;
+        for(uint256 i = 0; i < atokenIds.length; i++ ){
+            if (atokenIds[i] != 0) {
+                newArray.push(atokenIds[i]);
+            }
+        }
+
+        for(uint256 i = 0; i < atokenIds.length; i++ ){
+            if (atokenIds[i] != 0) {
+                for(uint256 j = 0; j < atokenIds.length; j++ ) {
+                    newArray[j] = atokenIds[i]
+                }
+            }
+        }
+
+        // select random tokenId from accpetor.
+        randomAcceptorTokenId = newArray[(rand % newArray.length) - 1];
+        acceptorRanking = _getRarityMessage(randomAcceptorTokenId, atokenIds, aRankings);
+        acceptorRarityIndex = _getRarityMessage(randomAcceptorTokenId, atokenIds, aIndexes);
+    }
+
 
     function toString(uint256 value) internal pure returns (string memory) {
     // Inspired by OraclizeAPI's implementation - MIT license
@@ -351,10 +357,72 @@ contract BattleLoot is Ownable {
         }
     }
 
-    function _recordRewardAmount(address account) internal {
-        claimableReward[account] += rewardAmountPerRound;
+    function _recordRewardAmount(address account) private {
+        claimableReward[account] =  claimableReward[account] + rewardAmountPerRound;
 
         emit recordedReward(account, claimableReward[account]);
+    }
+
+
+    function _battleByRanking(
+        address _challengerAddress,
+        address _acceptorAddress, 
+        uint256 _challengerRanking, 
+        uint256 _acceptorRanking
+    ) internal returns (bool result) {
+        battleDetailsByRanking[_challengerAddress].acceptorAddress = _acceptorAddress;
+        battleDetailsByRanking[_challengerAddress].challengerRanking = _challengerRanking;
+        battleDetailsByRanking[_challengerAddress].acceptorRanking = _acceptorRanking;
+
+        if(_challengerRanking < _acceptorRanking) {
+
+            battleDetailsByRanking[_challengerAddress].result = true;
+            _recordRewardAmount(_challengerAddress);
+
+            return result = true;
+
+        } else {
+            
+            battleDetailsByRanking[_challengerAddress].result = false;
+            battleDetailsByRanking[_challengerAddress].failNumber++;
+
+            if(battleDetailsByRanking[_challengerAddress].failNumber == 5) {
+                _recordRewardAmount(_challengerAddress);
+                battleDetailsByRanking[_challengerAddress].failNumber = 0;
+            }
+
+            return result = false;
+        }
+    }
+
+    function _battleByIndex(
+        address _challengerAddress,
+        address _acceptorAddress,
+        uint256 _challengerIndex,
+        uint256 _acceptorIndex
+    ) internal returns (bool result) {
+        battleDetailsByRarityIndex[_challengerAddress].acceptorAddress = _acceptorAddress;
+        battleDetailsByRarityIndex[_challengerAddress].challengerPower = _challengerIndex;
+        battleDetailsByRarityIndex[_challengerAddress].acceptorPower = _acceptorIndex;
+
+        if(_challengerIndex > _acceptorIndex) {
+            battleDetailsByRarityIndex[_challengerAddress].result = true;
+            
+            _recordRewardAmount(_challengerAddress);
+
+            return result = true;
+        } else {
+            
+            battleDetailsByRarityIndex[_challengerAddress].result = false;
+            battleDetailsByRarityIndex[_challengerAddress].failNumber++;
+
+            if(battleDetailsByRarityIndex[_challengerAddress].failNumber == 5) {
+                _recordRewardAmount(_challengerAddress);
+                battleDetailsByRarityIndex[_challengerAddress].failNumber = 0;
+            }
+
+            return result = false;
+        }
     }
 
 
