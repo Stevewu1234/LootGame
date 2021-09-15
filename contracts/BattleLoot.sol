@@ -303,13 +303,7 @@ contract BattleLoot is Ownable {
             }
         }
 
-        for(uint256 i = 0; i < atokenIds.length; i++ ){
-            if (atokenIds[i] != 0) {
-                for(uint256 j = 0; j < atokenIds.length; j++ ) {
-                    newArray[j] = atokenIds[i]
-                }
-            }
-        }
+
 
         // select random tokenId from accpetor.
         randomAcceptorTokenId = newArray[(rand % newArray.length) - 1];

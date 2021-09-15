@@ -329,7 +329,7 @@ contract cLoot is ERC721Enumerable, ReentrancyGuard, Ownable {
 
         _mint(account, tokenId);
 
-        emit tokenDeposited(account, tokenId);
+        emit Transfer(address(0), account, tokenId);
     }
 
     function withdraw(uint256 tokenId) external {
@@ -337,7 +337,7 @@ contract cLoot is ERC721Enumerable, ReentrancyGuard, Ownable {
         
         burn(tokenId);
 
-        emit tokenBurnt(msg.sender, tokenId);
+        emit Transfer(msg.sender, address(0), tokenId);
     }
 
     function burn(uint256 tokenId) public virtual {
@@ -351,9 +351,7 @@ contract cLoot is ERC721Enumerable, ReentrancyGuard, Ownable {
         childChainManagerProxy = _newchildChainMangerAddress;
     }
 
-    event tokenDeposited(address account, uint256 tokenId);
-    
-    event tokenBurnt(address account, uint256 tokenId);
+
 }
 
 /// [MIT License]
