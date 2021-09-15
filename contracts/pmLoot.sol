@@ -23,6 +23,10 @@ contract pmLoot is ERC721, Ownable {
         childChainManagerProxy = _newchildChainMangerAddress;
     }
 
+    function updateBattleAddress(address _newbattle) exteranl onlyOwner {
+        battleAddress = _newbattle;
+    }
+
 
     // polygon mapping
     function deposit(address account, bytes calldata depositData) external {
