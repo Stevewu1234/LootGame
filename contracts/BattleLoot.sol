@@ -66,47 +66,45 @@ contract BattleLoot is Ownable {
 
     /** ========== public view functions ========== */
 
-    function getYourStakedToken() public view returns (string memory ) {
+    function getYourStakedToken() public view returns (uint256[] memory) {
         uint256[] memory tokenIds = candidateWarriors[warriorsIndex[_msgSender()]].originalTokenIds;
-        string memory _stakedTokenId;
+        uint256[] memory _stakedTokenId = new uint256[](tokenIds.length);
+
         for(uint256 i = 0; i < tokenIds.length; i++ ) {
-            if(tokenIds[i] != 0) {
-               _stakedTokenId = string(abi.encodePacked(_stakedTokenId, toString(tokenIds[i]), ","));
-            }
+            _stakedTokenId[i] = tokenIds[i];
         }
 
-        return string(abi.encodePacked("your staked Id is: ", _stakedTokenId));
+        return _stakedTokenId;
     }
 
-    function getYourStakedToken(address account) public view returns (string memory) {
+    function getYourStakedToken(address account) public view returns (uint256[] memory) {
         uint256[] memory tokenIds = candidateWarriors[warriorsIndex[account]].originalTokenIds;
-        string memory _stakedTokenId;
+        uint256[] memory _stakedTokenId = new uint256[](tokenIds.length);
+
         for(uint256 i = 0; i < tokenIds.length; i++ ) {
-            if(tokenIds[i] != 0) {
-               _stakedTokenId = string(abi.encodePacked(_stakedTokenId, toString(tokenIds[i]), ","));
-            }
+            _stakedTokenId[i] = tokenIds[i];
         }
 
-        return string(abi.encodePacked("your staked Id is: ", _stakedTokenId));
+        return _stakedTokenId;
     }
 
-    function getClaimableReward(address account) public view returns (uint256 rewardAmount) {
+    function getClaimableReward(address account) public view returns (uint256) {
         return claimableReward[account];
     }
 
     function getCandidateWarriors(address warriorAddress) public view returns (
-        uint256 warriorId,
-        address _warriorAddress,
-        uint256[] memory _originalTokenIds,
-        uint256[] memory _rarityRankings,
-        uint256[] memory _rarityIndexes
+        uint256,
+        uint256[] memory,
+        uint256[] memory,
+        uint256[] memory
     ) {
         Warriors memory warrior = candidateWarriors[warriorsIndex[warriorAddress]];
-        warriorId = warriorsIndex[warriorAddress];
-        _warriorAddress = warrior.warriorAddress;
-        _originalTokenIds = warrior.originalTokenIds;
-        _rarityRankings = warrior.rarityRankings;
-        _rarityIndexes = warrior.rarityIndexes;
+        uint256 warriorId = warriorsIndex[warriorAddress];
+        uint256[] memory tokenIds = warrior.originalTokenIds;
+        uint256[] memory rankings = warrior.rarityRankings;
+        uint256[] memory indexes = warrior.rarityIndexes;
+
+        return (warriorId, tokenIds, rankings, indexes);
     }
 
 
@@ -118,7 +116,7 @@ contract BattleLoot is Ownable {
         require(_checkTokenExisted(challengerAddress, tokenId), "pvpBattleByRanking: please register tokenId first");
         
         // get challenger message 
-        ( , , uint256[] memory tokenIds, uint256[] memory rankings, ) = getCandidateWarriors(challengerAddress);
+        ( , uint256[] memory tokenIds, uint256[] memory rankings, ) = getCandidateWarriors(challengerAddress);
         uint256 challengerRanking = _getRarityMessage(tokenId, tokenIds, rankings);
         console.log("finish get challenger message", challengerRanking);
 
@@ -140,7 +138,7 @@ contract BattleLoot is Ownable {
         require(_checkTokenExisted(challengerAddress, tokenId), "pvpBattleByRarityIndex: please register tokenId first");
 
         // get warriors message
-        (, , uint256[] memory tokenIds, , uint256[] memory indexes) = getCandidateWarriors(challengerAddress);
+        (,uint256[] memory tokenIds, , uint256[] memory indexes) = getCandidateWarriors(challengerAddress);
         uint256 challengerRarityIndex = _getRarityMessage(tokenId, tokenIds, indexes);
 
         // select a random candidate acceptor address by challenger's basic power.
@@ -203,7 +201,8 @@ contract BattleLoot is Ownable {
     // users claim their reward
 
     function claim() external {
-        require(claimableReward[_msgSender()] >= rewardToken.balanceOf(address(this)), "claim: no enough token to claim");
+        require(claimableReward[_msgSender()] > 0, "claim reward: please play to earn");
+        require(claimableReward[_msgSender()] <= rewardToken.balanceOf(address(this)), "claim reward: no enough token to claim");
 
         rewardToken.transfer(_msgSender(), claimableReward[_msgSender()]);
 
@@ -284,7 +283,6 @@ contract BattleLoot is Ownable {
                 targetData = _array[i];
             }
         }
-        console.log("finish get rarity message");
     }
 
     function _getRandomAcceptor(uint256 challengerTokenId) internal view returns (
@@ -295,13 +293,15 @@ contract BattleLoot is Ownable {
     ) {
         // select a random candidate acceptor address by challenger's basic power.
         uint256 rand = uint256(keccak256(abi.encodePacked(toString(challengerTokenId), toString(block.timestamp))));
-        uint256 randomWarriorNumber = rand % totalWarriors;
+        uint256 randomWarriorNumber = (rand % totalWarriors) + 1;
+        console.log("finish get random warrior number", randomWarriorNumber);
+
         acceptorAddress = candidateWarriors[randomWarriorNumber].warriorAddress;
-        (, , uint256[] memory atokenIds, uint256[] memory aRankings, uint256[] memory aIndexes) = getCandidateWarriors(acceptorAddress);
+        (, uint256[] memory atokenIds, uint256[] memory aRankings, uint256[] memory aIndexes) = getCandidateWarriors(acceptorAddress);
         console.log("finish get random acceptor", acceptorAddress);
 
         // select random tokenId from accpetor.
-        randomAcceptorTokenId = atokenIds[(rand % atokenIds.length) - 1];
+        randomAcceptorTokenId = atokenIds[rand % atokenIds.length];
         console.log("finish get user's random tokenId", randomAcceptorTokenId);
 
         acceptorRanking = _getRarityMessage(randomAcceptorTokenId, atokenIds, aRankings);

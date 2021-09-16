@@ -1818,47 +1818,45 @@ contract BattleLoot is Ownable {
 
     /** ========== public view functions ========== */
 
-    function getYourStakedToken() public view returns (string memory ) {
+    function getYourStakedToken() public view returns (uint256[] memory) {
         uint256[] memory tokenIds = candidateWarriors[warriorsIndex[_msgSender()]].originalTokenIds;
-        string memory _stakedTokenId;
+        uint256[] memory _stakedTokenId = new uint256[](tokenIds.length);
+
         for(uint256 i = 0; i < tokenIds.length; i++ ) {
-            if(tokenIds[i] != 0) {
-               _stakedTokenId = string(abi.encodePacked(_stakedTokenId, toString(tokenIds[i]), ","));
-            }
+            _stakedTokenId[i] = tokenIds[i];
         }
 
-        return string(abi.encodePacked("your staked Id is: ", _stakedTokenId));
+        return _stakedTokenId;
     }
 
-    function getYourStakedToken(address account) public view returns (string memory) {
+    function getYourStakedToken(address account) public view returns (uint256[] memory) {
         uint256[] memory tokenIds = candidateWarriors[warriorsIndex[account]].originalTokenIds;
-        string memory _stakedTokenId;
+        uint256[] memory _stakedTokenId = new uint256[](tokenIds.length);
+
         for(uint256 i = 0; i < tokenIds.length; i++ ) {
-            if(tokenIds[i] != 0) {
-               _stakedTokenId = string(abi.encodePacked(_stakedTokenId, toString(tokenIds[i]), ","));
-            }
+            _stakedTokenId[i] = tokenIds[i];
         }
 
-        return string(abi.encodePacked("your staked Id is: ", _stakedTokenId));
+        return _stakedTokenId;
     }
 
-    function getClaimableReward(address account) public view returns (uint256 rewardAmount) {
+    function getClaimableReward(address account) public view returns (uint256) {
         return claimableReward[account];
     }
 
     function getCandidateWarriors(address warriorAddress) public view returns (
-        uint256 warriorId,
-        address _warriorAddress,
-        uint256[] memory _originalTokenIds,
-        uint256[] memory _rarityRankings,
-        uint256[] memory _rarityIndexes
+        uint256,
+        uint256[] memory,
+        uint256[] memory,
+        uint256[] memory
     ) {
         Warriors memory warrior = candidateWarriors[warriorsIndex[warriorAddress]];
-        warriorId = warriorsIndex[warriorAddress];
-        _warriorAddress = warrior.warriorAddress;
-        _originalTokenIds = warrior.originalTokenIds;
-        _rarityRankings = warrior.rarityRankings;
-        _rarityIndexes = warrior.rarityIndexes;
+        uint256 warriorId = warriorsIndex[warriorAddress];
+        uint256[] memory tokenIds = warrior.originalTokenIds;
+        uint256[] memory rankings = warrior.rarityRankings;
+        uint256[] memory indexes = warrior.rarityIndexes;
+
+        return (warriorId, tokenIds, rankings, indexes);
     }
 
 
@@ -1870,7 +1868,7 @@ contract BattleLoot is Ownable {
         require(_checkTokenExisted(challengerAddress, tokenId), "pvpBattleByRanking: please register tokenId first");
         
         // get challenger message 
-        ( , , uint256[] memory tokenIds, uint256[] memory rankings, ) = getCandidateWarriors(challengerAddress);
+        ( , uint256[] memory tokenIds, uint256[] memory rankings, ) = getCandidateWarriors(challengerAddress);
         uint256 challengerRanking = _getRarityMessage(tokenId, tokenIds, rankings);
         console.log("finish get challenger message", challengerRanking);
 
@@ -1892,7 +1890,7 @@ contract BattleLoot is Ownable {
         require(_checkTokenExisted(challengerAddress, tokenId), "pvpBattleByRarityIndex: please register tokenId first");
 
         // get warriors message
-        (, , uint256[] memory tokenIds, , uint256[] memory indexes) = getCandidateWarriors(challengerAddress);
+        (,uint256[] memory tokenIds, , uint256[] memory indexes) = getCandidateWarriors(challengerAddress);
         uint256 challengerRarityIndex = _getRarityMessage(tokenId, tokenIds, indexes);
 
         // select a random candidate acceptor address by challenger's basic power.
@@ -1936,24 +1934,17 @@ contract BattleLoot is Ownable {
     function quitFromGame(uint256 tokenId) external {        
 
         // delete player tokenId
-        console.log("start quit");
         require(_checkTokenExisted(_msgSender(), tokenId), "quitFromGame: Sorry, you are not a candidate warrior.");
-
-        console.log("checked id existed");
-
         require(_deleteTokenIdRecords(_msgSender(), tokenId), "quitFromGame: fail to delete tokenId records");
-        console.log("finish delete challenger message");
 
         // check player records and delete player records if no tokenId exists.
         if(candidateWarriors[warriorsIndex[_msgSender()]].originalTokenIds.length == 0) {
             delete warriorsIndex[_msgSender()];
             totalWarriors--;
         }
-        console.log("finish delete all message");
 
         // return player's token
         pmloot.transferFrom(address(this), _msgSender(), tokenId);
-        console.log("finish transfer tokenId");
 
         emit roleQuit(tokenId, _msgSender());
     }
@@ -1962,7 +1953,8 @@ contract BattleLoot is Ownable {
     // users claim their reward
 
     function claim() external {
-        require(claimableReward[_msgSender()] >= rewardToken.balanceOf(address(this)), "claim: no enough token to claim");
+        require(claimableReward[_msgSender()] > 0, "claim reward: please play to earn");
+        require(claimableReward[_msgSender()] <= rewardToken.balanceOf(address(this)), "claim reward: no enough token to claim");
 
         rewardToken.transfer(_msgSender(), claimableReward[_msgSender()]);
 
@@ -2043,7 +2035,6 @@ contract BattleLoot is Ownable {
                 targetData = _array[i];
             }
         }
-        console.log("finish get rarity message");
     }
 
     function _getRandomAcceptor(uint256 challengerTokenId) internal view returns (
@@ -2054,16 +2045,20 @@ contract BattleLoot is Ownable {
     ) {
         // select a random candidate acceptor address by challenger's basic power.
         uint256 rand = uint256(keccak256(abi.encodePacked(toString(challengerTokenId), toString(block.timestamp))));
-        uint256 randomWarriorNumber = rand % totalWarriors;
+        uint256 randomWarriorNumber = (rand % totalWarriors) + 1;
+        console.log("finish get random warrior number", randomWarriorNumber);
+
         acceptorAddress = candidateWarriors[randomWarriorNumber].warriorAddress;
-        (, , uint256[] memory atokenIds, uint256[] memory aRankings, uint256[] memory aIndexes) = getCandidateWarriors(acceptorAddress);
-        console.log("finish get random acceptor");
+        (, uint256[] memory atokenIds, uint256[] memory aRankings, uint256[] memory aIndexes) = getCandidateWarriors(acceptorAddress);
+        console.log("finish get random acceptor", acceptorAddress);
 
         // select random tokenId from accpetor.
-        randomAcceptorTokenId = atokenIds[(rand % atokenIds.length) - 1];
+        randomAcceptorTokenId = atokenIds[rand % atokenIds.length];
+        console.log("finish get user's random tokenId", randomAcceptorTokenId);
+
         acceptorRanking = _getRarityMessage(randomAcceptorTokenId, atokenIds, aRankings);
         acceptorRarityIndex = _getRarityMessage(randomAcceptorTokenId, atokenIds, aIndexes);
-        console.log("finish get user's random tokenId");
+        console.log("finish get user's random ranking");
     }
 
 
@@ -2104,7 +2099,6 @@ contract BattleLoot is Ownable {
                 deleted = true;
             }
         }
-        console.log("finish delete tokenRecords");
 
         _updateWarriors(account);
     }
@@ -2114,8 +2108,6 @@ contract BattleLoot is Ownable {
         uint256[] memory tokenIds = warrior.originalTokenIds;
         uint256[] memory rankings = warrior.rarityRankings;
         uint256[] memory rarityIndexes = warrior.rarityIndexes;
-
-        console.log("finish get warriors message");
 
         // deleted tokenId will still occupy array position, generate new nonzero tokenId array to storage available tokenIds.
         uint256 resultCount;
@@ -2143,9 +2135,6 @@ contract BattleLoot is Ownable {
         warrior.originalTokenIds = newTokenIds;
         warrior.rarityRankings = newRankings;
         warrior.rarityIndexes = newRarityIndexes;
-
-        console.log("finish update tokenIds");
-
     }
 
     function _recordRewardAmount(address account) private {
