@@ -8,3 +8,8 @@ battle loot is a game basing on loot. Moreover, in order to improve user's exper
 
 0x5AC25F10dc42F64041d16Cc989F3eb640F449cD7
 
+goerli: https://goerli.etherscan.io/address/0x5dB5bD7121443d1fcD2063969884AD38C047b450#writeContract
+
+mumbai: https://mumbai.polygonscan.com/address/0x52d6405d0F3De27388cb5c1DAa96fd63E2884376#writeContract
+
+mapping request: https://mapper.matic.today/
