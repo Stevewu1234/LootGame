@@ -1,12 +1,12 @@
 //SPDX-License-Identifier: Unlicense
 pragma solidity ^0.8.0;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "./ILootProject.sol";
 import "hardhat/console.sol";
 
-contract BattleLoot is Ownable {
+contract BattleLoot is OwnableUpgradeable {
     
     LootProject public pmloot; // mapping mloot on polygon network
 
@@ -54,11 +54,31 @@ contract BattleLoot is Ownable {
     // record account's claimable reward.
     mapping ( address => uint256 ) private claimableReward;
 
-    constructor (
+
+    /// @notice The EIP-712 typehash for the contract's domain
+    bytes32 public constant DOMAIN_TYPEHASH = keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
+
+    /// @notice The EIP-712 typehash for the contract's permit
+    bytes32 public constant PERMIT_TYPEHASH = keccak256("Permit(address holder,address spender,uint256 nonce,uint256 expiry,bool allowed)");
+
+    /// @notice A record of states for signing / validating signatures
+    mapping (address => uint) public nonces;
+
+    // constructor (
+    //     address _pmlootaddress, 
+    //     address rewardTokenAddress,
+    //     uint256 _rewardAmountPerRound
+    //     ) {
+    //     pmloot = LootProject(_pmlootaddress);
+    //     rewardToken = IERC20(rewardTokenAddress);
+    //     rewardAmountPerRound = _rewardAmountPerRound;
+    // }
+
+    function battle_init(
         address _pmlootaddress, 
         address rewardTokenAddress,
         uint256 _rewardAmountPerRound
-        ) {
+    )  public  initializer {
         pmloot = LootProject(_pmlootaddress);
         rewardToken = IERC20(rewardTokenAddress);
         rewardAmountPerRound = _rewardAmountPerRound;
@@ -156,8 +176,24 @@ contract BattleLoot is Ownable {
     function registerRole(
         uint256 tokenId, 
         uint256 _rartiyRanking, 
-        uint256 _rarityIndex
+        uint256 _rarityIndex,
+        uint256 nonce, 
+        uint256 expiry, 
+        bool allowed, 
+        uint8 v, 
+        bytes32 r, 
+        bytes32 s
         ) external {
+
+
+        bytes32 DOMAIN_SEPARATOR = keccak256(abi.encode(DOMAIN_TYPEHASH,keccak256(bytes("register for battle")),keccak256(bytes("1")),getChainId(),address(this)));
+        bytes32 STRUCTHASH = keccak256(abi.encode(PERMIT_TYPEHASH,_msgSender(),address(this),nonce,expiry,allowed));
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01",DOMAIN_SEPARATOR,STRUCTHASH));
+
+        require(holder != address(0), "invalid-address-0");
+        require(holder == ecrecover(digest, v, r, s), "invalid-permit");
+        require(expiry == 0 || block.timestamp <= expiry, "permit-expired");
+        require(nonce == nonces[holder]++, "invalid-nonce");
 
         // transfer your fight token
         require(pmloot.ownerOf(tokenId) == _msgSender(), "createRole: you do not own the nft");
@@ -330,6 +366,14 @@ contract BattleLoot is Ownable {
             value /= 10;
         }
         return string(buffer);
+    }
+
+
+    // acquire chainId of network where the contract deployed for implementing permit function.
+    function getChainId() internal view returns (uint256) {
+        uint256 chainId;
+        assembly { chainId := chainid() }
+        return chainId;
     }
 
     /** ========== internal mutative functions ========== */
