@@ -26,7 +26,7 @@ contract cbtest is ERC20Burnable, Ownable {
 
     function withdraw(uint256 amount) external {
         
-        _burn(amount);
+        _burn(_msgSender(),amount);
 
         emit Transfer(msg.sender, address(0), amount);
     }

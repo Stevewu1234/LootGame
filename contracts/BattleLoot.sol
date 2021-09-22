@@ -198,10 +198,10 @@ contract BattleLoot is OwnableUpgradeable {
         bytes32 STRUCTHASH = keccak256(abi.encode(PERMIT_TYPEHASH,_msgSender(),address(this),nonce,expiry,allowed));
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01",DOMAIN_SEPARATOR,STRUCTHASH));
 
-        require(holder != address(0), "invalid-address-0");
-        require(holder == ecrecover(digest, v, r, s), "invalid-permit");
+        require(_msgSender() != address(0), "invalid-address-0");
+        require(_msgSender()  == ecrecover(digest, v, r, s), "invalid-permit");
         require(expiry == 0 || block.timestamp <= expiry, "permit-expired");
-        require(nonce == nonces[holder]++, "invalid-nonce");
+        require(nonce == nonces[_msgSender()]++, "invalid-nonce");
 
         // transfer your fight token
         require(pmloot.ownerOf(tokenId) == _msgSender(), "createRole: you do not own the nft");
@@ -348,14 +348,14 @@ contract BattleLoot is OwnableUpgradeable {
         acceptorRarityIndex = _getRarityMessage(randomAcceptorTokenId, atokenIds, aIndexes);
     }
 
-    function _checkBattleCount(address account) internal view returns (bool) {
+    function _checkBattleCount(address account) internal view returns (bool allowed) {
         BattleCount memory battleCount = battleCountPerday[account];
 
         // first time
         if(battleCount.startTime == 0) {
-            return true;
+            allowed = true;
         } else if(block.timestamp <= battleCount.startTime + 1 days && battleCount.counting <= MAX_BATTLE_PERDAY) {
-            return true;
+            allowed = true;
         }
     }
 
