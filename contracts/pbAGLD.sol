@@ -21,15 +21,14 @@ contract cbtest is ERC20Burnable, Ownable {
 
         _mint(account, amount);
 
-        emit tokenDeposited(account, amount);
+        emit Transfer(address(0), account, amount);
     }
 
     function withdraw(uint256 amount) external {
-        require(childChainManagerProxy == _msgSender(), "withdraw: you're not allowed to withdraw");
         
-        burn(amount);
+        _burn(amount);
 
-        emit tokenBurnt(msg.sender, amount);
+        emit Transfer(msg.sender, address(0), amount);
     }
 
     /** ========== external mutative onlyOwner functions ========== */
@@ -38,11 +37,4 @@ contract cbtest is ERC20Burnable, Ownable {
         require(_newchildChainMangerAddress != address(0), "updateChildChainManger: you can not set 0 address");
         childChainManagerProxy = _newchildChainMangerAddress;
     }
-
-
-    /** ========== event ========== */
-
-    event tokenDeposited(address indexed receiver, uint256 depositedAmount);
-
-    event tokenBurnt(address indexed account, uint256 burntAmount);
 }
