@@ -1,15 +1,15 @@
 //SPDX-License-Identifier: Unlicense
 pragma solidity ^0.8.0;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "./ILootProject.sol";
 
-contract BattleLoot is Ownable {
+contract BattleLoot is OwnableUpgradeable {
     
     LootProject public loot;
 
-    IERC20 public rewardToken;
+    IERC20Upgradeable public rewardToken;
 
     uint256 public rewardAmountPerRound;
 
@@ -40,12 +40,20 @@ contract BattleLoot is Ownable {
 
     mapping ( address => uint256 ) public currentIndex;
 
-    constructor (
-        address _lootaddress, 
+    // constructor (
+    //     address _plootAddress, 
+    //     address rewardTokenAddress
+    //     ) {
+    //     loot = LootProject(_plootAddress);
+    //     rewardToken = IERC20Upgradeable(rewardTokenAddress);
+    // }
+    
+    function lootgame_init(
+        address _plootAddress,
         address rewardTokenAddress
-        ) {
-        loot = LootProject(_lootaddress);
-        rewardToken = IERC20(rewardTokenAddress);
+    ) public initializer {
+        loot = LootProject(_plootAddress);
+        rewardToken = IERC20Upgradeable(rewardTokenAddress);
     }
 
     /** ========== external mutative functions ========== */
@@ -122,7 +130,7 @@ contract BattleLoot is Ownable {
     /** ========== exteranl mutative onlyOwner functions ========== */
 
     function updateRewardToken(address newRewardToken) external onlyOwner {
-        rewardToken = IERC20(newRewardToken);
+        rewardToken = IERC20Upgradeable(newRewardToken);
 
         emit rewardTokenUpdated(newRewardToken);
     }

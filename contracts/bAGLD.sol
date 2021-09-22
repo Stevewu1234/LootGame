@@ -7,7 +7,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 contract Btest is ERC20, Ownable {
     
 
-    constructor () ERC20("Btest", "BT") {
+    constructor () ERC20("bAGLD", "bAGLD") {
         _mint(_msgSender(), 1000000000e18);
     }
 

@@ -4,19 +4,20 @@ pragma solidity ^0.8.0;
 import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "./ILootProject.sol";
-import "hardhat/console.sol";
 
 contract BattleLoot is OwnableUpgradeable {
     
     LootProject public pmloot; // mapping mloot on polygon network
 
-    IERC20 public rewardToken;
+    IERC20Upgradeable public rewardToken;
 
     uint256 public rewardAmountPerRound;
 
     uint256 public constant MAXROUND = 10;
 
     uint256 public totalWarriors;
+
+    uint256 public constant MAX_BATTLE_PERDAY = 20;
 
     struct BattleByRanking {
         address acceptorAddress;
@@ -41,6 +42,11 @@ contract BattleLoot is OwnableUpgradeable {
         uint256[] rarityIndexes;
     }
 
+    struct BattleCount {
+        uint256 startTime;
+        uint256 counting;
+    }
+
     mapping ( address => BattleByRanking ) public battleDetailsByRanking;
 
     mapping ( address => BattleByRarityIndex ) public battleDetailsByRarityIndex;
@@ -53,6 +59,9 @@ contract BattleLoot is OwnableUpgradeable {
 
     // record account's claimable reward.
     mapping ( address => uint256 ) private claimableReward;
+
+    // limit one user only battle 20
+    mapping ( address => BattleCount ) private battleCountPerday;
 
 
     /// @notice The EIP-712 typehash for the contract's domain
@@ -80,7 +89,7 @@ contract BattleLoot is OwnableUpgradeable {
         uint256 _rewardAmountPerRound
     )  public  initializer {
         pmloot = LootProject(_pmlootaddress);
-        rewardToken = IERC20(rewardTokenAddress);
+        rewardToken = IERC20Upgradeable(rewardTokenAddress);
         rewardAmountPerRound = _rewardAmountPerRound;
     }
 
@@ -134,19 +143,17 @@ contract BattleLoot is OwnableUpgradeable {
         address challengerAddress = _msgSender();
         require(warriorsIndex[challengerAddress] != 0, "pvpBattleByRanking: please register your role at first");
         require(_checkTokenExisted(challengerAddress, tokenId), "pvpBattleByRanking: please register tokenId first");
+        require(battleCountPerday[challengerAddress].counting <= MAX_BATTLE_PERDAY, "Sorry, you have exceeded max battle count in one day");
         
         // get challenger message 
         ( , uint256[] memory tokenIds, uint256[] memory rankings, ) = getCandidateWarriors(challengerAddress);
         uint256 challengerRanking = _getRarityMessage(tokenId, tokenIds, rankings);
-        console.log("finish get challenger message", challengerRanking);
 
         // select a random candidate warriors by challenger's basic message.
         (address acceptorAddress, , uint256 acceptorRanking, ) = _getRandomAcceptor(tokenId);
-        console.log("finish get select random user");
         
         // pvp battle
         result = _battleByRanking(challengerAddress, acceptorAddress, challengerRanking, acceptorRanking);
-        console.log("finish battle");
         
         emit pvpBattledByRanking(challengerAddress, acceptorAddress, result);
     }
@@ -156,6 +163,7 @@ contract BattleLoot is OwnableUpgradeable {
         address challengerAddress = _msgSender();
         require(warriorsIndex[challengerAddress] != 0, "pvpBattleByRarityIndex: please register your role at first");
         require(_checkTokenExisted(challengerAddress, tokenId), "pvpBattleByRarityIndex: please register tokenId first");
+        require(battleCountPerday[challengerAddress].counting <= MAX_BATTLE_PERDAY, "Sorry, you have exceeded max battle count in one day");
 
         // get warriors message
         (,uint256[] memory tokenIds, , uint256[] memory indexes) = getCandidateWarriors(challengerAddress);
@@ -190,10 +198,10 @@ contract BattleLoot is OwnableUpgradeable {
         bytes32 STRUCTHASH = keccak256(abi.encode(PERMIT_TYPEHASH,_msgSender(),address(this),nonce,expiry,allowed));
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01",DOMAIN_SEPARATOR,STRUCTHASH));
 
-        require(holder != address(0), "invalid-address-0");
-        require(holder == ecrecover(digest, v, r, s), "invalid-permit");
+        require(_msgSender() != address(0), "invalid-address-0");
+        require(_msgSender()  == ecrecover(digest, v, r, s), "invalid-permit");
         require(expiry == 0 || block.timestamp <= expiry, "permit-expired");
-        require(nonce == nonces[holder]++, "invalid-nonce");
+        require(nonce == nonces[_msgSender()]++, "invalid-nonce");
 
         // transfer your fight token
         require(pmloot.ownerOf(tokenId) == _msgSender(), "createRole: you do not own the nft");
@@ -249,7 +257,7 @@ contract BattleLoot is OwnableUpgradeable {
     /** ========== exteranl mutative onlyOwner functions ========== */
 
     function updateRewardToken(address newRewardToken) external onlyOwner {
-        rewardToken = IERC20(newRewardToken);
+        rewardToken = IERC20Upgradeable(newRewardToken);
 
         emit rewardTokenUpdated(newRewardToken);
     }
@@ -330,19 +338,25 @@ contract BattleLoot is OwnableUpgradeable {
         // select a random candidate acceptor address by challenger's basic power.
         uint256 rand = uint256(keccak256(abi.encodePacked(toString(challengerTokenId), toString(block.timestamp))));
         uint256 randomWarriorNumber = (rand % totalWarriors) + 1;
-        console.log("finish get random warrior number", randomWarriorNumber);
 
         acceptorAddress = candidateWarriors[randomWarriorNumber].warriorAddress;
         (, uint256[] memory atokenIds, uint256[] memory aRankings, uint256[] memory aIndexes) = getCandidateWarriors(acceptorAddress);
-        console.log("finish get random acceptor", acceptorAddress);
 
         // select random tokenId from accpetor.
         randomAcceptorTokenId = atokenIds[rand % atokenIds.length];
-        console.log("finish get user's random tokenId", randomAcceptorTokenId);
-
         acceptorRanking = _getRarityMessage(randomAcceptorTokenId, atokenIds, aRankings);
         acceptorRarityIndex = _getRarityMessage(randomAcceptorTokenId, atokenIds, aIndexes);
-        console.log("finish get user's random ranking");
+    }
+
+    function _checkBattleCount(address account) internal view returns (bool allowed) {
+        BattleCount memory battleCount = battleCountPerday[account];
+
+        // first time
+        if(battleCount.startTime == 0) {
+            allowed = true;
+        } else if(block.timestamp <= battleCount.startTime + 1 days && battleCount.counting <= MAX_BATTLE_PERDAY) {
+            allowed = true;
+        }
     }
 
 
@@ -445,6 +459,7 @@ contract BattleLoot is OwnableUpgradeable {
         battleDetailsByRanking[_challengerAddress].acceptorAddress = _acceptorAddress;
         battleDetailsByRanking[_challengerAddress].challengerRanking = _challengerRanking;
         battleDetailsByRanking[_challengerAddress].acceptorRanking = _acceptorRanking;
+        _battleCounting(_challengerAddress);
 
         if(_challengerRanking < _acceptorRanking) {
 
@@ -476,6 +491,7 @@ contract BattleLoot is OwnableUpgradeable {
         battleDetailsByRarityIndex[_challengerAddress].acceptorAddress = _acceptorAddress;
         battleDetailsByRarityIndex[_challengerAddress].challengerPower = _challengerIndex;
         battleDetailsByRarityIndex[_challengerAddress].acceptorPower = _acceptorIndex;
+        _battleCounting(_challengerAddress);
 
         if(_challengerIndex > _acceptorIndex) {
             battleDetailsByRarityIndex[_challengerAddress].result = true;
@@ -495,6 +511,29 @@ contract BattleLoot is OwnableUpgradeable {
 
             return result = false;
         }
+
+        
+    }
+
+
+    function _battleCounting(address account) internal {
+
+        BattleCount storage battleCount = battleCountPerday[account];
+        
+        if(battleCount.startTime == 0) {
+            battleCount.startTime = block.timestamp;
+            battleCount.counting++;
+        } else {
+            if(_checkBattleCount(account)) {
+                battleCount.counting++;
+            } else {
+                battleCount.startTime = block.timestamp;
+                battleCount.counting = 0;
+            }
+        }
+
+        emit battleCounted(account, battleCount.counting);
+        
     }
 
 
@@ -505,6 +544,8 @@ contract BattleLoot is OwnableUpgradeable {
     event pvpBattledByRanking(address indexed warriorAddress, address acceptorAddress, bool result);
 
     event pvpBattledByRarityIndex(address indexed warriorAddress, address acceptorAddress, bool result);
+
+    event battleCounted(address indexed account, uint256 count);
 
     event roleQuit(uint256 indexed tokenId, address playerAddress);
 
