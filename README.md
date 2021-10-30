@@ -2,6 +2,8 @@
 
 battle loot is a game basing on loot. Moreover, in order to improve user's experience, the game will be deployed on polygon. But the asset of staking in game is transferred from lay1(Ethereum) to lay2(polygon).
 
+()
+
 
 goerli: https://goerli.etherscan.io/address/0x8CBA6DaF7Bd6fD194e2C2CBEcc36DC8DAcC6e774#code
 
